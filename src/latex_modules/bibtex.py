@@ -252,6 +252,7 @@ class Bibliography:
 		else:
 			cmd = ["bibtex", "-min-crossrefs=" + self.crossrefs, self.base]
 		process = Popen(cmd, stdout=PIPE, stderr=PIPE)
+
 		process.communicate()
 		if process.wait() != 0:
 			msg.info(_("There were errors making the bibliography."))

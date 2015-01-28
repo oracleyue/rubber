@@ -1123,7 +1123,8 @@ class LaTeXDep (Node):
 		if file.find(" ") >= 0:
 			file = '"%s"' % file
 
-		cmd = [self.vars["program"]]
+		#cmd = [self.vars["program"]]
+		cmd = [self.vars["program"], "-shell-escape"]
 
 		if self.set_job:
 			if self.vars["engine"] == "VTeX":

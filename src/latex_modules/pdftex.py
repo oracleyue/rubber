@@ -3,7 +3,7 @@
 """
 pdfLaTeX support for Rubber.
 
-When this module is loaded with the otion 'dvi', the document is compiled to
+When this module is loaded with the option 'dvi', the document is compiled to
 DVI using pdfTeX.
 """
 
