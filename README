@@ -40,7 +40,22 @@ e.g.
 in my osx.
 
 
-*Usage
+* Integrate rubber in Emacs + AucTeX
+
+Adding the following codes in your .emacs file:
+
+    (eval-after-load "tex"
+       '(add-to-list 'TeX-command-list
+                     '("Rubber" "rubber -d %t" TeX-run-command nil t) t))
+    (eval-after-load "tex"
+       '(add-to-list 'TeX-command-list
+                     '("Rubber-clean" "rubber --clean %t" TeX-run-command nil t) t))
+    (add-hook 'TeX-mode-hook '(lambda () (setq TeX-command-default "Rubber")))
+
+
+
+
+* Usage
 
 As civility requires, saying `rubber --help' and `rubber-info --help' provides
 a short description of the command line's syntax. The included manual pages
