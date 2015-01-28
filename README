@@ -1,4 +1,4 @@
-This is Rubber.
+This is a fork of rubber-20100306 in launchpad.net, with some bugs fixed when used in OS X.
 
 Rubber is a building system for LaTeX documents. It is based on a routine that
 runs just as many compilations as necessary and runs companion programs like
@@ -28,8 +28,19 @@ To compile and install Rubber, just follow the usual procedure:
 
 The options for configuration can be shown using ./configure --help.
 
+After installation, if getting errors when running rubber:
+"Traceback (most recent call last):
+  File "/usr/local/bin/rubber", line 3, in <module>
+      from rubber.cmdline import Main
+      ImportError: No module named rubber.cmdline
+"
+set the environemtn variable "PYTHONPATH" in your ".profile" or ".bash_profile" file, according to the output of "./configure".
+e.g. 
+    export PYTHONPATH=/usr/local/lib/python2.7/site-packages/:${PYTHONPATH} 
+in my osx.
 
-* Usage
+
+*Usage
 
 As civility requires, saying `rubber --help' and `rubber-info --help' provides
 a short description of the command line's syntax. The included manual pages
