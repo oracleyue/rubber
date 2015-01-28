@@ -1242,7 +1242,7 @@ class LaTeXDep (Node):
 		"""
 		Remove all files that are produced by compilation.
 		"""
-		self.remove_suffixes([".log", ".aux", ".toc", ".lof", ".lot"])
+		self.remove_suffixes([".log", ".aux", ".toc", ".lof", ".lot", ".pyg", ".spl", ".synctex.gz"])
 
 		for file in self.products + self.removed_files:
 			if os.path.exists(file):
