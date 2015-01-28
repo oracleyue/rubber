@@ -1124,7 +1124,7 @@ class LaTeXDep (Node):
 			file = '"%s"' % file
 
 		#cmd = [self.vars["program"]]
-		cmd = [self.vars["program"], "-shell-escape"]
+		cmd = [self.vars["program"], "-shell-escape", "--synctex=1"]
 
 		if self.set_job:
 			if self.vars["engine"] == "VTeX":
