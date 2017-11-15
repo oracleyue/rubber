@@ -1,17 +1,12 @@
 """
 This module contains code for handling dependency graphs.
 """
+# vim: noet:ts=4
 
 import os, time
 from subprocess import Popen
-from rubber import msg, _
-
-class Set (dict):
-	"""
-	Represents a set of dependency nodes. Nodes can be accessed by absolute
-	path name using the dictionary interface.
-	"""
-	pass
+import rubber.util
+from rubber.util import _, msg, devnull
 
 # constants for the return value of Node.make:
 
@@ -25,54 +20,29 @@ class Node (object):
 	functionality of date checking and recursive making, supposing the
 	existence of a method `run()' in the object.
 	"""
-	def __init__ (self, set, products=[], sources=[]):
+	def __init__ (self, set):
 		"""
-		Initialize the object for a given set of output files and a given set
-		of sources. The argument `products' is the list of names for files
-		produced by this node, and the argument `sources' is the list of names
-		for the dependencies. The node registers itself in the dependency set,
+		The node registers itself in the dependency set,
 		and if a given depedency is not known in the set, a leaf node is made
 		for it.
 		"""
 		self.set = set
 		self.products = []
 		self.sources = []
+		self.md5_for_source = {}
+		# making is the lock guarding against making a node while making it
 		self.making = False
+		# date: timestamp when this Node was last successfully built.
+		# is initialized to the mtime of the most recent product,
+		# or to None if a product is missing.
+		# when a build succeeds, it is set to time.time(), including fractional
+		# seconds. in case building fails, it is set to None.
+		self.date = 0  # 1970-01-01 (will be updated in add_product)
+		# failed_dep: the Node which caused the build to fail.  can be self
+		# if this Node failed to build, or a dependency.
 		self.failed_dep = None
-		for name in products:
-			self.add_product(name)
-		for name in sources:
-			self.add_source(name)
-		self.set_date()
 
-	def set_date (self):
-		"""
-		Define the date of the last build of this node as that of the most
-		recent file among the products. If some product does not exist or
-		there are no products, the date is set to None.
-		"""
-		if self.products == []:
-			self.date = None
-		else:
-			try:
-				# We set the node's date to that of the most recently modified
-				# product file, assuming all other files were up to date then
-				# (though not necessarily modified).
-				self.date = max(map(os.path.getmtime, self.products))
-			except OSError:
-				# If some product file does not exist, set the last
-				# modification date to None.
-				self.date = None
-
-	def reset_sources (self, names=[]):
-		"""
-		Redefine the set of produced files for this node.
-		"""
-		self.sources = []
-		for name in names:
-			self.add_source(name)
-
-	def add_source (self, name):
+	def add_source (self, name, track_contents=False):
 		"""
 		Register a new source for this node. If the source is unknown, a leaf
 		node is made for it.
@@ -81,22 +51,20 @@ class Node (object):
 			self.set[name] = Leaf(self.set, name)
 		if name not in self.sources:
 			self.sources.append(name)
+		if track_contents:
+			# mark as "hash unknown"
+			# only for the second build during this rubber run, we want to skip
+			# recompiling based on MD5 hashes.  for the first build, only the
+			# date counts.
+			self.md5_for_source[name] = "UNKNOWN"
 
 	def remove_source (self, name):
 		"""
 		Remove a source for this node.
 		"""
-		self.sources.remove(name)
-
-	def reset_products (self, names=[]):
-		"""
-		Redefine the set of produced files for this node.
-		"""
-		for name in self.products:
-			del self.set[name]
-		self.products = []
-		for name in names:
-			self.add_product(name)
+		self.sources.remove (name)
+		if self.md5_for_source.has_key (name):
+			del self.md5_for_source[name]
 
 	def add_product (self, name):
 		"""
@@ -105,6 +73,12 @@ class Node (object):
 		self.set[name] = self
 		if name not in self.products:
 			self.products.append(name)
+		try:
+			if self.date is not None:
+				self.date = max (os.path.getmtime (name), self.date)
+		except OSError:
+			# a product is missing, we should_make at least once.
+			self.date = None
 
 	def source_nodes (self):
 		"""
@@ -125,8 +99,19 @@ class Node (object):
 		"""
 		if not self.date:
 			return True
-		for source in self.source_nodes():
-			if source.date > self.date:
+		for source_name in self.sources:
+			source = self.set[source_name]
+			# FIXME complain if source has been modified in an unplanned way
+			# NB: we ignore the case source.date == None (missing dependency) here.
+			# NB2: to be extra correct, equal (disk-precision) timestamps trigger a recompile.
+			if source.date is not None and source.date >= self.date:
+				if self.md5_for_source.has_key (source_name):
+					if self.md5_for_source[source_name] == rubber.util.md5_file (source_name):
+						msg.debug(_("while making %s: contents of %s unchanged, ignoring mtime") % (self.products[0], source_name), pkg="depend")
+						continue
+					msg.debug(_("while making %s: contents of dependency %s changed, rebuilding") % (self.products[0], source_name), pkg="depend")
+					return True
+				msg.debug(_("while making %s: timestamp of dependency %s changed, rebuilding") % (self.products[0], source_name), pkg="depend")
 				return True
 		return False
 
@@ -139,53 +124,70 @@ class Node (object):
 		  one of its dependencies)
 		- UNCHANGED means that nothing had to be done
 		- CHANGED means that something was recompiled (therefore nodes that
-		  depend on this one have to be remade)
+		  depend on this one might have to be remade)
+		  This is mainly for diagnostics to the user, rubber no longer makes
+		  build decisions based on this value - proved to be error-prone.
 		If the optional argument 'force' is true, then the method 'run' is
 		called unless an error occurred in dependencies, and in this case
 		UNCHANGED cannot be returned.
 		"""
-		if self.making:
-			print "FIXME: cyclic make"
-			return UNCHANGED
+		# catch if cyclic dependencies have not been detected properly
+		assert not self.making
 		self.making = True
+		rv = self.real_make (force)
+		self.making = False
+		if rv == ERROR:
+			self.date = None
+			assert self.failed_dep is not None
+		else:
+			assert self.date is not None
+			self.failed_dep = None
+		return rv
 
-		# Make the sources
+	def real_make (self, force):
+		rv = UNCHANGED
+		patience = 5
+		primary_product = self.products[0]
+		msg.debug(_("make %s -> %s") % (primary_product, str (self.sources)), pkg="depend")
+		while patience > 0:
+			# make our sources
+			for source_name in self.sources:
+				source = self.set[source_name]
+				if source.making:
+					# cyclic dependency -- drop for now, we will re-visit
+					# this would happen while trying to remake the .aux in order to make the .bbl, for example
+					msg.debug(_("while making %s: cyclic dependency on %s (pruned)") % (primary_product, source_name), pkg="depend")
+					continue
+				source_rv = source.make (force)
+				if source_rv == ERROR:
+					self.failed_dep = source.failed_dep
+					msg.debug(_("while making %s: dependency %s could not be made") % (primary_product, source_name), pkg="depend")
+					return ERROR
+				elif source_rv == CHANGED:
+					rv = CHANGED
 
-		self.failed_dep = None
-		must_make = force
-		for source in self.source_nodes():
-			ret = source.make()
-			if ret == ERROR:
-				self.making = False
-				self.failed_dep = source.failed_dep
-				return ERROR
-			elif ret == CHANGED:
-				must_make = True
+			must_make = force or self.should_make ()
+			if not must_make:
+				return rv
 
-		# Make this node if necessary
+			# record MD5 hash of source files as we now actually start the build
+			for source_name in self.md5_for_source.keys ():
+				self.md5_for_source[source_name] = rubber.util.md5_file (source_name)
 
-		if must_make or self.should_make():
-			if force:
-				ok = self.force_run()
-			else:
-				ok = self.run()
-			if not ok:
-				self.making = False
+			# actually make
+			if not self.run ():
 				self.failed_dep = self
 				return ERROR
 
-			# Here we must take the integer part of the value returned by
-			# time.time() because the modification times for files, returned
-			# by os.path.getmtime(), is an integer. Keeping the fractional
-			# part could lead to errors in time comparison when a compilation
-			# is shorter than one second...
+			self.date = time.time ()
+			rv = CHANGED
+			force = False
 
-			self.date = int(time.time())
-			self.making = False
-			return CHANGED
+			patience -= 1
 
-		self.making = False
-		return UNCHANGED
+		self.failed_dep = self
+		msg.error(_("while making %s: file contents does not seem to settle") % self.products[0], pkg="depend")
+		return ERROR
 
 	def run (self):
 		"""
@@ -194,13 +196,6 @@ class Node (object):
 		on failure. It must be redefined by derived classes.
 		"""
 		return False
-
-	def force_run (self):
-		"""
-		This method is called instead of 'run' when rebuilding this node was
-		forced. By default it is equivalent to 'run'.
-		"""
-		return self.run()
 
 	def failed (self):
 		"""
@@ -218,28 +213,16 @@ class Node (object):
 
 	def clean (self):
 		"""
-		Remove the files produced by this rule and recursively clean all
-		dependencies.
+		Remove the files produced by this rule.  Note that cleaning is not
+		done recursively; rather, all dependency nodes are cleaned in no
+		particular order (see cmdline.py / cmd_pipe.py)
+
+                Each override should start with
+                super (class, self).clean ()
 		"""
 		for file in self.products:
-			if os.path.exists(file):
-				msg.log(_("removing %s") % file)
-				os.unlink(file)
-		for source in self.source_nodes():
-			source.clean()
+			rubber.util.verbose_remove (file)
 		self.date = None
-
-	def leaves (self):
-		"""
-		Return a list of all source files that are required by this node and
-		cannot be built, i.e. the leaves of the dependency tree.
-		"""
-		if self.sources == []:
-			return self.products
-		ret = []
-		for source in self.source_nodes():
-			ret.extend(source.leaves())
-		return ret
 
 class Leaf (Node):
 	"""
@@ -251,14 +234,23 @@ class Leaf (Node):
 		Initialize the node. The argument of this method are the dependency
 		set and the file name.
 		"""
-		Node.__init__(self, set, products=[name])
+		super (Leaf, self).__init__(set)
+		self.add_product (name)
+
+	def real_make (self, force):
+		# custom version to cut down on debug messages
+		if not self.run ():
+			self.failed_dep = self
+			return ERROR
+		else:
+			return UNCHANGED
 
 	def run (self):
 		if self.date is not None:
 			return True
-		# FIXME
-		msg.error(_("%r does not exist") % self.products[0])
-		return False
+		else:
+			msg.error(_("%r does not exist") % self.products[0], pkg="leaf")
+			return False
 
 	def clean (self):
 		pass
@@ -267,14 +259,30 @@ class Shell (Node):
 	"""
 	This class specializes Node for generating files using shell commands.
 	"""
-	def __init__ (self, set, command, products, sources):
-		Node.__init__(self, set, products, sources)
+	def __init__ (self, set, command):
+		super (Shell, self).__init__ (set)
 		self.command = command
+		self.stdout = None
 
 	def run (self):
 		msg.progress(_("running: %s") % ' '.join(self.command))
-		process = Popen(self.command)
+		process = Popen(self.command, stdin=devnull(), stdout=self.stdout)
 		if process.wait() != 0:
 			msg.error(_("execution of %s failed") % self.command[0])
 			return False
 		return True
+
+class Pipe (Shell):
+	"""
+	This class specializes Node for generating files using the stdout of shell commands.
+	The 'product' will receive the stdout of 'command'.
+	"""
+	def __init__ (self, set, command, product):
+		super (Pipe, self).__init__(set, command)
+		self.add_product (product)
+
+	def run (self):
+		self.stdout = open(self.products[0], 'w')
+		ret = super (Pipe, self).run ()
+		self.stdout.close()
+		return ret

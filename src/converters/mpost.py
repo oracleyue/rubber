@@ -1,3 +1,4 @@
+# vim: noet:ts=4
 # This file is covered by the GPL as part of Rubber.
 # (c) Emmanuel Beffara, 2002--2006
 """
@@ -10,10 +11,12 @@ Metapost's log files after the process. Is it enough?
 import os, os.path
 import re, string
 
-from rubber import _
-from rubber import *
-from rubber.depend import Node
-from rubber.converters.latex import LogCheck
+from rubber.util import _
+from rubber.util import *
+import rubber.depend
+import rubber.converters.latex
+
+metapost_logfile_limit = 1000000
 
 def check (source, target, context):
 	return prog_available('mpost')
@@ -23,13 +26,13 @@ re_input = re.compile("input\\s+(?P<file>[^\\s;]+)")
 re_mpext = re.compile("[0-9]+|mpx|log")
 re_mpxerr = re.compile("% line (?P<line>[0-9]+) (?P<file>.*)$")
 
-class MPLogCheck (LogCheck):
+class MPLogCheck (rubber.converters.latex.LogCheck):
 	"""
 	This class adapats the LogCheck class from the main program to the case of
 	MetaPost log files, which are very similar to TeX log files.
 	"""
 	def __init__ (self, pwd):
-		LogCheck.__init__(self)
+		super (MPLogCheck, self).__init__ ()
 		self.pwd = pwd
 
 	def read (self, name):
@@ -37,16 +40,11 @@ class MPLogCheck (LogCheck):
 		The read() method in LogCheck checks that the log is produced by TeX,
 		here we check that it is produced by MetaPost.
 		"""
-		file = open(name)
-		line = file.readline()
-		if not line:
-			file.close()
-			return 1
-		if line.find("This is MetaPost,") == -1:
-			file.close()
-			return 1
-		self.lines = file.readlines()
-		file.close()
+		with open (name) as file:
+			line = file.readline()
+			if not line or line.find("This is MetaPost,") == -1:
+				return 1
+			self.lines = file.readlines()
 		return 0
 
 	def continued (self, line):
@@ -66,7 +64,7 @@ class MPLogCheck (LogCheck):
 		is that of TeX errors in Metapost labels, which requires parsing
 		another TeX log file.
 		"""
-		for err in LogCheck.get_errors(self):
+		for err in super (MPLogCheck, self).get_errors():
 			if (err["kind"] != "error"
 				or err["text"] != "Unable to make mpx file."):
 				yield err
@@ -74,16 +72,16 @@ class MPLogCheck (LogCheck):
 
 			# a TeX error was found: parse mpxerr.log
 
-			log = LogCheck()
-			if log.read(os.path.join(self.pwd, "mpxerr.log")):
+			log = rubber.converter.latex.LogCheck()
+			# FIXME this path has no testcase.
+			if not log.readlog (os.path.join(self.pwd, "mpxerr.log"), metapost_logfile_limit):
 				yield err
 				continue
 
 			# read mpxerr.tex to read line unmbers from it
 
-			tex_file = open(os.path.join(self.pwd, "mpxerr.tex"))
-			tex = tex_file.readlines()
-			tex_file.close()
+			with open(os.path.join(self.pwd, "mpxerr.tex")) as tex_file:
+				tex = tex_file.readlines()
 
 			# get the name of the mpxNNN.tex source
 
@@ -114,18 +112,18 @@ class MPLogCheck (LogCheck):
 					yield err
 
 
-class Dep (Node):
+class Dep (rubber.depend.Node):
 	"""
 	This class represents dependency nodes for MetaPost figures. The __init__
 	method simply creates one node for the figures and one leaf node for all
 	sources.
 	"""
 	def __init__ (self, set, target, source, context):
-		sources = []
 		self.cmd_pwd = os.path.dirname(source)
-		self.include(os.path.basename(source), sources)
-		msg.log(_("%s is made from %r") % (target, sources))
-		Node.__init__(self, set, [target], sources)
+		super (Dep, self).__init__(set)
+		self.add_product (target)
+		self.include (os.path.basename (source))
+		msg.log(_("%s is made from %r") % (target, self.sources))
 		self.env = context['_environment']
 		self.base = source[:-3]
 		self.cmd = ["mpost", "\\batchmode;input %s" %
@@ -139,7 +137,7 @@ class Dep (Node):
 				"MPINPUTS": "%s:%s" % (path, os.getenv("MPINPUTS", "")) }
 		self.log = None
 
-	def include (self, source, list):
+	def include (self, source):
 		"""
 		This function tries to find a specified MetaPost source (currently all
 		in the same directory), appends its actual name to the list, and
@@ -150,13 +148,12 @@ class Dep (Node):
 			file = file + ".mp"
 		elif not os.path.exists(file):
 			return
-		list.append(file)
-		fd = open(file)
-		for line in fd.readlines():
-			m = re_input.search(line)
-			if m:
-				self.include(m.group("file"), list)
-		fd.close()
+		self.add_source (file)
+		with open(file) as fd:
+			for line in fd:
+				m = re_input.search(line)
+				if m:
+					self.include (m.group ("file"))
 
 	def run (self):
 		"""
@@ -171,7 +168,7 @@ class Dep (Node):
 		# This creates a log file that has the same aspect as TeX logs.
 
 		self.log = MPLogCheck(self.cmd_pwd)
-		if self.log.read(self.base + ".log"):
+		if not self.log.readlog (self.base + ".log", metapost_logfile_limit):
 			msg.error(_(
 				"I can't read MetaPost's log file, this is wrong."))
 			return False
@@ -189,6 +186,7 @@ class Dep (Node):
 		have created. It is required because the compilation may produce more
 		files than just the figures used by the document.
 		"""
+		super (Dep, self).clean ()
 		base = self.base + "."
 		ln = len(base)
 		dir = os.path.dirname(base)
@@ -202,8 +200,7 @@ class Dep (Node):
 				ext = file[ln:]
 				m = re_mpext.match(ext)
 				if m and ext[m.end():] == "":
-					msg.log(_("removing %s") % file)
-					os.unlink(file)
+					rubber.util.verbose_remove (file, pkg="mpost")
 
 # The `files' dictionary associates dependency nodes to MetaPost sources. It
 # is used to detect when several figures from the same source are included. It

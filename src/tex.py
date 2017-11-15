@@ -1,5 +1,6 @@
 # This file is part of Rubber and thus covered by the GPL
 # (c) Emmanuel Beffara, 2008
+# vim: noet:ts=4
 """
 General-purpose classes for reading TeX code.
 Classes and functions from this module can be used without Rubber.
@@ -117,7 +118,7 @@ class TokenList (list):
 	some extra functionality.
 	"""
 	def __init__ (self, data=[], pos=None):
-		list.__init__(self, data)
+		super (TokenList, self).__init__(data)
 		if pos is None and len(data) > 0:
 			self.pos = data[0].pos
 		else:
@@ -133,7 +134,7 @@ class TokenList (list):
 			text += token.raw
 		return text
 
-class ParserBase:
+class ParserBase (object):
 	"""
 	This is the base class for parsers. It holds state information like
 	catcodes, handles the push-back buffer, and leaves it to derived classes
@@ -189,6 +190,13 @@ class ParserBase:
 		else:
 			token = self.read_token()
 
+		# skip over comment
+		if token.cat == COMMENT:
+			assert len(self.next) == 0
+			assert self.next_char is None
+			self.read_line()
+			return self.read_token()
+
 		if token.cat == MATH:
 			if self.last_is_math:
 				if self.math_mode == 1:
@@ -220,7 +228,7 @@ class ParserBase:
 		"""
 		Skip white space in the input.
 		"""
-		while self.peek_token().cat == SPACE:
+		while self.peek_token().cat in (SPACE, END_LINE):
 			self.get_token()
 
 	def get_group (self):
@@ -296,6 +304,7 @@ class ParserBase:
 		Check if a LaTeX-style optional argument is present. If such an
 		argument is present, return it as a token list, otherwise return None.
 		"""
+		self.skip_space()
 		next = self.get_token()
 
 		if next.cat != OTHER or next.raw != '[':
@@ -329,6 +338,18 @@ class ParserBase:
 		if list is None:
 			return None
 		return list.raw_text()
+
+	def get_latex_star (self):
+		"""
+		Check if the command is a starred one.  If so, eat the star,
+		and return True.  Otherwise, return False.
+		"""
+		nextt = self.peek_token()
+		if (nextt.cat, nextt.raw) == (OTHER, '*'):
+			self.get_token()
+			return True
+		else:
+			return False
 
 def re_set (set, complement=False):
 	"""
@@ -371,7 +392,7 @@ class Parser (ParserBase):
 		before parsing. If 'input' is None, then input can only be provided by
 		the 'put_token' and 'put_list' methods.
 		"""
-		ParserBase.__init__(self)
+		super (Parser, self).__init__()
 		if coding is None:
 			self.input = input
 		else:
@@ -491,20 +512,6 @@ class Parser (ParserBase):
 				return Token(EOF)
 			self.pos_line += 1
 			self.pos_char = 1
-
-class ListParser (ParserBase):
-	"""
-	A parser that reads its input from a token list (or any iterable object
-	that contains tokens) instead of parsing anything.
-	"""
-	def __init__ (self, input):
-		ParserBase.__init__(self)
-		self.input = iter(input)
-	def read_token (self):
-		try:
-			return self.input.next()
-		except StopIteration:
-			return Token(EOF)
 
 def parse_string (text):
 	"""

@@ -1,3 +1,163 @@
+Version 1.4 (2015-12-11)
+
+  This version of Rubber officially requires Python 2.6 and up.
+  Note that the code has not been tested with Python 3, so if you
+  run it under Python 3, you're on your own.  Bug reports are welcome!
+
+  Starting with 1.4, the primary repository at Launchpad is a
+  Git tree.
+
+  Features:
+  - New distutils-based build & install scripts by Nicolas.
+  - Report BibTeX / Biber errors more reliably.
+  - We have support for embedding R code via knitr.
+    http://yihui.name/knitr/
+    Closes: https://bugs.launchpad.net/rubber/+bug/1422759
+    Note that since R can run arbitrary external code, --unsafe
+    must be given at the command line:
+      rubber -d --unsafe paper.Rtex
+    creates beautifully typeset PDF from your R script.
+  - Support for PythonTeX package.  Also requires --unsafe if
+    you want Rubber to invoke pythontex.
+  - Rubber will no longer attempt to use jpeg2ps on its own, which has
+    been superseded by sam2p.  (You can add it back by providing your
+    own rules.ini.)
+
+  Bugfixes:
+  - Refuse to read logfiles which exceed 1 MB.
+    This avoids out-of-memory situations.  The limit may be raised with
+      % rubber: set logfile_limit 1000000
+    https://bugs.launchpad.net/rubber/+bug/628150
+  - The command-line parsing of rubber and rubber-info has been merged.
+    Thus, the --inplace and --into options are not only accepted by
+    Rubber (as they were previously), they also take effect.
+    Closes: https://bugs.launchpad.net/rubber/+bug/975376
+  - Rubber complains properly now for nonexisting directives, and
+    doesn't just print a stacktrace.
+    Closes: https://bugs.launchpad.net/rubber/+bug/1090115
+  - More refactoring, reducing the number of code paths to test and
+    maintain.
+
+Version 1.3 (2015-10-11)
+
+  This version of rubber has changes in the dependency management.
+  As a result, it may call LaTeX more often than it used to.
+  On the other hand, there are less corner cases when LaTeX or
+  BibTeX should have been called, but wasn't.
+
+  Thanks to Nicolas Boulenguez for helping with lots of patches.
+
+  Features:
+    - Rewriting dependency management code with the aims of
+      simplicity, correctness and reduced lines of code.
+    - Support for SyncTeX.
+      You can enable SyncTeX support by calling rubber --synctex,
+      or by having a magic line
+        % rubber: synctex
+      in your document's preamble.
+      https://bugs.launchpad.net/rubber/+bug/414431
+    - Support for ltxtable, glossaries and biblatex, contributed
+      by Sebastian Reichel.  Please test and report any problems!
+      https://bugs.launchpad.net/rubber/+bug/860661
+    - Support for asymptote, contributed by Nicolas Boulenguez.
+    - Support for bibtopic, contributed by Nicolas Boulenguez.
+      https://bugs.debian.org/460670
+    - The BibTeX support can now use a different version of BibTeX.
+      The external command for Rubber to run goes into the .tool variable:
+      For example:
+        % rubber: bibtex.tool bibtex8
+      tells Rubber to use BibTeX8.
+      https://bugs.debian.org/471185
+    - New directive: "produce" which implies that a file is being
+      generated during LaTeXing and must be cleaned up afterwards.
+      Example:
+        % rubber: produce doc.toc
+      Indicates that during LaTeXing, .toc will be written (produce).
+      Example 2:
+        % rubber: produce doc.toc
+        % rubber: watch doc.toc
+      Indicates that doc.toc will be read (watch) and updated (produce).
+      This also tells rubber to recompile the LaTeX document until
+      doc.toc no longer changes.  "produce" implies "clean", i.e. the
+      file will be disposed of when rubber is invoked with --clean.
+    - Beginnings of a test suite.
+      The current code does not pass all the tests (neither
+      did previous Rubbers).
+
+  Bugfixes:
+    - Fix handling of absolute pathnames by not having absolute pathnames
+      for the most part.
+      https://bugs.debian.org/682892
+      https://bugs.debian.org/798829
+      https://bugs.debian.org/798991
+    - Fix bibtex.path directive.
+      https://bugs.launchpad.net/rubber/+bug/686187
+      https://bugs.debian.org/694265
+    - Fix ntheorem support.
+      https://bugs.debian.org/328107
+    - Fix TeX parser to handle spaces and comments between the macro
+      and its arguments.
+      More radical fix than Debian (https://bugs.debian.org/725355)
+      https://bugs.launchpad.net/rubber/+bug/1049883
+    - Fix read directive.  Patch by Lionel Vaux.
+      https://bugs.debian.org/701898
+    - Fix dvipdfm, backref and hyperref support.
+    - Fix \includegraphics*
+      https://bugs.launchpad.net/rubber/+bug/1478034
+    - Fix elatex being called when etex.sty is use'd.
+      https://bugs.launchpad.net/rubber/+bug/856449
+    - Typos and clarifications in the docs, lots of cleanup and minor
+      fixes in the code.
+
+Version 1.2 (2015-06-25)
+
+  Features:
+    - shell_escape feature to enable -shell-escape in LaTeX.
+      BEWARE: granting shell-escape (write18) to a document permits it
+      to run arbitrary external commands.  Use only on trusted (your own)
+      documents!
+      Usage:  to mark a document as requiring shell-escape, add the line
+            % rubber: shell_escape
+      near the header.  To grant shell-escape to a document, run rubber as
+            rubber --unsafe document.tex
+      There are several older hacks documented on the internet which continue
+      to work, but are deprecated from now on.  The 'arguments' variable
+      will be removed in the future.
+      https://bugs.launchpad.net/rubber/+bug/878629
+    - XeLaTeX support.
+      https://bugs.launchpad.net/rubber/+bug/660426
+      https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=579757
+    - Support for gnuplottex (requires --unsafe)
+    - Experimental PythonTeX support contributed by Ferdinand Schwenk
+      (requires --unsafe).
+
+  Bugfixes:
+    - Fix handling of set{,list} arguments.
+    - Fix BibTeX called with absolute path and refusing to write.
+      https://bugs.launchpad.net/rubber/+bug/1287593
+    - Fix LaTeX parsing with optional whitespace
+      https://bugs.launchpad.net/rubber/+bug/195258
+    - Fix behavior when .aux is not generated
+      https://bugs.launchpad.net/rubber/+bug/1208464
+      https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=402150
+    - Catch broken working directory and print error
+      https://bugs.launchpad.net/rubber/+bug/529198
+    - Fix LoadClassWithOptions
+      https://bugs.launchpad.net/rubber/+bug/1266912
+      https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=718932
+    - Fix \pdfoutput=1
+      https://bugs.launchpad.net/rubber/+bug/921444
+      https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=691305
+    - Update homepage
+      https://bugs.launchpad.net/rubber/+bug/1169485
+    - Fix crash on nonexisting directory
+      https://bugs.launchpad.net/rubber/+bug/529198
+    - Fix CWEB and lhs2tex support which was broken.
+    - Fix stdin being leaked to subprocesses, including LaTeX
+      https://bugs.launchpad.net/rubber/+bug/802169
+
+  And many others...
+
 Version 1.1 (2006-03-17)
 
   Features:

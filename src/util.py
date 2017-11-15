@@ -1,5 +1,6 @@
 # This file is part of Rubber and thus covered by the GPL
 # (c) Emmanuel Beffara, 2002--2006
+# vim:noet:ts=4
 """
 This module contains utility functions and classes used by the main system and
 by the modules for various tasks.
@@ -7,24 +8,156 @@ by the modules for various tasks.
 
 import hashlib
 import os, stat, time
+import errno
 import imp
 import re, string
+import shutil
 from string import whitespace
+import sys
 
-from rubber import _, msg
+#-- Message writers --{{{1
+
+# The function `_' is defined here to prepare for internationalization.
+def _ (txt): return txt
+
+class Message (object):
+	"""
+	All messages in the program are output using the `msg' object in the
+	main package. This class defines the interface for this object.
+	"""
+	def __init__ (self, level=1, write=None):
+		"""
+		Initialize the object with the specified verbosity level and an
+		optional writing function. If no such function is specified, no
+		message will be output until the 'write' field is changed.
+		"""
+		self.level = level
+		self.write = write
+		self.short = 0
+		self.path = ""
+		self.cwd = "./"
+		self.pos = []
+
+	def push_pos (self, pos):
+		self.pos.append(pos)
+	def pop_pos (self):
+		del self.pos[-1]
+
+	def __call__ (self, level, text):
+		"""
+		This is the low level printing function, it receives a line of text
+		with an associated verbosity level, so that output can be filtered
+		depending on command-line options.
+		"""
+		if self.write and level <= self.level:
+			self.write (text)
+
+	def display (self, kind, text, **info):
+		"""
+		Print an error or warning message. The argument 'kind' indicates the
+		kind of message, among "error", "warning", "abort", the argument
+		'text' is the main text of the message, the other arguments provide
+		additional information, including the location of the error.
+		"""
+		if kind == "error":
+			if text[0:13] == "LaTeX Error: ":
+				text = text[13:]
+			self(0, self.format_pos(info, text))
+			if info.has_key("code") and info["code"] and not self.short:
+				if info.has_key("macro"):
+					del info["macro"]
+				self(0, self.format_pos(info,
+					_("leading text: ") + info["code"]))
+
+		elif kind == "abort":
+			if self.short:
+				msg = _("compilation aborted ") + info["why"]
+			else:
+				msg = _("compilation aborted: %s %s") % (text, info["why"])
+			self(0, self.format_pos(info, msg))
+
+		elif kind == "warning":
+			self(0, self.format_pos(info, text))
+
+	def error (self, text, **info):
+		self.display(kind="error", text=text, **info)
+	def warn (self, what, **where):
+		self(0, self.format_pos(where, what))
+	def progress (self, what, **where):
+		self(1, self.format_pos(where, what + "..."))
+	def info (self, what, **where):
+		self(2, self.format_pos(where, what))
+	def log (self, what, **where):
+		self(3, self.format_pos(where, what))
+	def debug (self, what, **where):
+		self(4, self.format_pos(where, what))
+
+	def format_pos (self, where, text):
+		"""
+		Format the given text into a proper error message, with file and line
+		information in the standard format. Position information is taken from
+		the dictionary given as first argument.
+		"""
+		if len(self.pos) > 0:
+			if where is None or not where.has_key("file"):
+				where = self.pos[-1]
+		elif where is None or where == {}:
+			return text
+
+		if where.has_key("file") and where["file"] is not None:
+			pos = self.simplify(where["file"])
+			if where.has_key("line") and where["line"]:
+				pos = "%s:%d" % (pos, int(where["line"]))
+				if where.has_key("last"):
+					if where["last"] != where["line"]:
+						pos = "%s-%d" % (pos, int(where["last"]))
+			pos = pos + ": "
+		else:
+			pos = ""
+		if where.has_key("macro"):
+			text = "%s (in macro %s)" % (text, where["macro"])
+		if where.has_key("page"):
+			text = "%s (page %d)" % (text, int(where["page"]))
+		if where.has_key("pkg"):
+			text = "[%s] %s" % (where["pkg"], text)
+		return pos + text
+
+	def simplify (self, name):
+		"""
+		Simplify an path name by removing the current directory if the
+		specified path is in a subdirectory.
+		"""
+		path = os.path.normpath(os.path.join(self.path, name))
+		if path[:len(self.cwd)] == self.cwd:
+			return path[len(self.cwd):]
+		return path
+
+	def display_all (self, generator):
+		something = 0
+		for msg in generator:
+			self.display(**msg)
+			something = 1
+		return something
+
+msg = Message()
 
 #-- Miscellaneous functions --{{{1
 
 def md5_file (fname):
 	"""
 	Compute the MD5 sum of a given file.
+	Returns None if the file does not exist.
 	"""
-	m = hashlib.md5()
-	file = open(fname)
-	for line in file.readlines():
-		m.update(line)
-	file.close()
-	return m.digest()
+	try:
+		m = hashlib.md5()
+		with open(fname) as file:
+			for line in file:
+				m.update(line)
+		return m.digest()
+	except IOError as e:
+		if e.errno == errno.ENOENT:
+			return None
+		raise e
 
 
 #-- Keyval parsing --{{{1
@@ -41,12 +174,13 @@ def parse_keyval (str):
 	standard 'keyval' package. The value returned is simply a dictionary that
 	contains all definitions found in the string. For keys without a value,
 	the dictionary associates the value None.
+	If str is None, consider it as empty.
 	"""
 	dict = {}
-	while 1:
+	while str:
 		m = re_keyval.match(str)
 		if not m:
-			return dict
+			break
 		d = m.groupdict()
 		str = str[m.end():]
 		if not d["val"]:
@@ -56,6 +190,7 @@ def parse_keyval (str):
 			dict[d["key"]] = val
 		else:
 			dict[d["key"]] = string.strip(d["val"])
+	return dict
 
 def match_brace (str):
 	"""
@@ -86,13 +221,15 @@ def prog_available (prog):
 	Test whether the specified program is available in the current path, and
 	return its actual path if it is found, or None.
 	"""
+	pathsep = ";" if os.name == "nt" else ":"
+	fileext = ".exe" if os.name == "nt" else ""
 	if checked_progs.has_key(prog):
 		return checked_progs[prog]
-	for path in os.getenv("PATH").split(":"):
-		file = os.path.join(path, prog)
+	for path in os.getenv("PATH").split(pathsep):
+		file = os.path.join(path, prog) + fileext
 		if os.path.exists(file):
 			st = os.stat(file)
-			if stat.S_ISREG(st.st_mode) and st.st_mode & 0111:
+			if stat.S_ISREG(st.st_mode) and (st.st_mode & 0o111):
 				checked_progs[prog] = file
 				return file
 	checked_progs[prog] = None
@@ -268,19 +405,78 @@ def parse_line (line, dict):
 
 	return elems
 
-def make_line (template, dict):
+devnull_fp = None
+def devnull ():
+	global devnull_fp
+	if not devnull_fp:
+		devnull_fp = open(os.devnull, 'rw')
+	return devnull_fp
+
+def explode_path (name = "PATH"):
 	"""
-	Instanciate a command template as returned by parse_line using a specific
-	dictionary for variables.
+	Parse an environment variable into a list of paths, and return it as an array.
 	"""
-	def one_string (arg):
-		if arg.__class__ != list: return arg
-		val = ""
-		for elem in arg:
-			if elem[0] == "'":
-				val = val + elem[1:]
-			else:
-				if dict.has_key(elem[1:]):
-					val = val + str(dict[elem[1:]])
-		return val
-	return map(one_string, template)
+	path = os.getenv (name)
+	if path is not None:
+		return path.split (":")
+	else:
+		return []
+
+def find_resource (name, suffix = "", paths = []):
+	"""
+	find the indicated file, mimicking what latex would do:
+	tries adding a suffix such as ".bib", or looking in the specified paths.
+	if unsuccessful, returns None.
+	"""
+	name = name.strip ()
+
+	if os.path.exists (name):
+		return name
+	elif suffix != "" and os.path.exists (name + suffix):
+		return name + suffix
+
+	for path in paths:
+		fullname = os.path.join (path, name)
+		if os.path.exists (fullname):
+			return fullname
+		elif suffix != "" and os.path.exists (fullname + suffix):
+			return fullname + suffix
+
+	return None
+
+def verbose_remove (path, **kwargs):
+	"""
+	Remove a file and notify the user of it.
+	This is meant for --clean;  failures are ignored.
+	"""
+	try:
+		os.remove (path)
+	except OSError as e:
+		if e.errno != errno.ENOENT:
+			msg.log (_("error removing '{filename}': {strerror}").format ( \
+				filename=msg.simplify (path), strerror=e.strerror), **kwargs)
+		return
+	msg.log (_("removing {}").format (msg.simplify (path)), **kwargs)
+
+def verbose_rmtree (tree):
+	"""
+	Remove a directory and notify the user of it.
+	This is meant for --clean;  failures are ignored.
+	"""
+	msg.log (_("removing tree {}").format (msg.simplify (tree)))
+	# FIXME proper error reporting
+	shutil.rmtree (tree, ignore_errors=True)
+
+def stderr_write (text):
+	sys.stderr.write (text + "\n")
+
+def stdout_write (text):
+	sys.stdout.write (text + "\n")
+
+def abort_rubber_syntax_error ():
+	"""signal invalid Rubber command-line"""
+	sys.exit (1)
+
+def abort_generic_error ():
+	"""errors running LaTeX, finding essential files, etc."""
+	sys.exit (2)

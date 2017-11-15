@@ -1,0 +1,3 @@
+watch $job.toc $job.nav $job.snm
+produce $job.toc $job.nav $job.snm
+module hyperref

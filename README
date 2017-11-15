@@ -1,4 +1,4 @@
-This is a fork of rubber-20100306 in launchpad.net, with some bugs fixed when used in OS X.
+This is Rubber.
 
 Rubber is a building system for LaTeX documents. It is based on a routine that
 runs just as many compilations as necessary and runs companion programs like
@@ -13,46 +13,59 @@ dependency relations or post-compilation diagnostics.
 
 * Installation
 
-Compiling and running Rubber just requires Python version 2.2 or newer. For
-compilation, you will need the Python Distutils, which are usually included in
-developpement packages (in Debian, this is the python-dev package). Of course
-it won't be of much use without a working LaTeX environment (Rubber is known
-to work on teTeX and VTeX on various flavours of Unix including Darwin and
-Cygwin, any feedback is welcome about other systems).
+Running Rubber just requires Python version 2.6 or newer.  Of course it won't
+be of much use without a working LaTeX environment (Rubber is known to work on
+TeXLive and VTeX on various flavors of Unix including Darwin and Cygwin, any
+feedback is welcome about other systems).
+
+For compilation, you will need the Python Distutils, which are usually included
+in development packages (in Debian, this is the python-dev package).  To build
+the documentation, you need texinfo (Debian package: texinfo).
 
 To compile and install Rubber, just follow the usual procedure:
 
-	./configure
-	make
-	make install
-
-The options for configuration can be shown using ./configure --help.
-
-After installation, if getting errors when running rubber:
-"Traceback (most recent call last):
-  File "/usr/local/bin/rubber", line 3, in <module>
-      from rubber.cmdline import Main
-      ImportError: No module named rubber.cmdline
-"
-set the environemtn variable "PYTHONPATH" in your ".profile" or ".bash_profile" file, according to the output of "./configure".
-e.g. 
-    export PYTHONPATH=/usr/local/lib/python2.7/site-packages/:${PYTHONPATH} 
-in my osx.
+# python2 setup.py --help
+# python2 setup.py install
+# python2 setup.py clean --all
 
 
-* Integrate rubber in Emacs + AucTeX
+Some useful options to setup.py include:
 
-Adding the following codes in your .emacs file:
+Disabling info docs:
 
-    (eval-after-load "tex"
-       '(add-to-list 'TeX-command-list
-                     '("Rubber" "rubber -d %t" TeX-run-command nil t) t))
-    (eval-after-load "tex"
-       '(add-to-list 'TeX-command-list
-                     '("Rubber-clean" "rubber --clean %t" TeX-run-command nil t) t))
-    (add-hook 'TeX-mode-hook '(lambda () (setq TeX-command-default "Rubber")))
+# python2 setup.py build --info=False install
 
+and similar for --html, --man, --pdf.
 
+Changing the installation path for manpages:
+
+# python2 setup.py install --mandir=/path/to/man/pages
+
+Installing to a staging directory instead of the root/prefix:
+
+# python2 setup.py install --root=/staging/directory
+
+Note that if you need build and install to be two different steps
+(for example when building packages for distribution purposes),
+Python's distutils will forget about any 'build' options, and re-build
+with default options during the 'install' stage.  This is worrysome if
+you'd like not to build some of the documentation.  It is then best
+to make options permanent by putting them info a setup.cfg file.  For
+example:
+
+[build]
+man = 1
+html = 0
+pdf = 0
+info = 0
+txt = 0
+[install]
+prefix  = /usr
+
+Finally, invoke
+
+# python2 setup.py build
+# python2 setup.py install --root=/staging/directory
 
 
 * Usage
@@ -65,10 +78,13 @@ precise usage information.
 
 * Author
 
-Rubber is written and maintained by Emmanuel Beffara <emmanuel@beffara.org>.
+Rubber was originally written by Emmanuel Beffara <emmanuel@beffara.org>.
+It is currently maintained by Sebastian Kapfer <sebastian.kapfer@fau.de>.
+
+Its homepage can be found at https://launchpad.net/rubber.
 
 Thanks to all those who provided testing, comments and suggestions, and
 re-thanks to those who wrote patches and bugfixes.
 
 Any kind of feedback is appreciated, in order to make this program as useful,
-robust and powerful as possible...
+robust and powerful as possible.

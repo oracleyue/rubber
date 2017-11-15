@@ -8,28 +8,24 @@ level of chapters, parts and sections. This nice feature has the drawback of
 producing a lot of auxiliary files, and this module handles the cleaning of
 these.
 
-TODO: handle the shortext option
+It relies on the listfiles option, wich is active by default. Listing
+the produced files is quite complex (see shortext option for example).
 """
 
-import os
-import re
+import os.path
 
 from rubber import _, msg
+from rubber.util import verbose_remove
+import rubber.module_interface
 
-re_tocext = re.compile("[mps](tc|l[ft])[0-9]+")
+class Module (rubber.module_interface.Module):
+    def __init__ (self, document, context):
+        self.maf = document.basename (with_suffix = ".maf")
 
-def setup (document, context):
-	global doc
-	doc = document
-
-def clean ():
-	doc.remove_suffixes(['.bmt'])
-	base = doc.target + '.'
-	ln = len(base)
-	for file in os.listdir('.'):
-		if file[:ln] == base:
-			ext = file[ln:]
-			m = re_tocext.match(ext)
-			if m and ext[m.end():] == "":
-				msg.log(_("removing %s") % file, pkg='minitoc')
-				os.unlink(file)
+    def clean (self):
+        if os.path.exists (self.maf):
+            with open (self.maf, "r") as list:
+                for name in list:
+                    name = name.rstrip ()
+                    verbose_remove (name, pkg = "minitoc")
+            verbose_remove (self.maf, pkg = "minitoc")

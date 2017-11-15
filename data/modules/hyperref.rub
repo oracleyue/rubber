@@ -1,2 +1,0 @@
-watch $target.out
-clean $target.out $target.brf

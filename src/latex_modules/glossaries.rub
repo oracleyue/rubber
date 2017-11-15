@@ -1,0 +1,2 @@
+watch $job.glo
+onchange $job.glo "cd `dirname $job` && makeglossaries `basename $job`"

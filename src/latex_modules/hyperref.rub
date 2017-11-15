@@ -1,0 +1,2 @@
+produce $job.out $job.brf
+watch $job.out

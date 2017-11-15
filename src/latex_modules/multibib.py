@@ -1,5 +1,6 @@
 # This file is part of Rubber and thus covered by the GPL
 # (c) Emmanuel Beffara, 2004--2006
+# vim: noet:ts=4
 """
 Multibib support for Rubber
 
@@ -15,77 +16,60 @@ argument, they apply to all bibliographies.
 """
 
 import os, os.path, re
-
 from rubber import _, msg
-from rubber.latex_modules.bibtex import Bibliography
+import rubber.util
+import rubber.biblio
+import rubber.module_interface
 
 re_optarg = re.compile(r'\((?P<list>[^()]*)\) *')
 
-def setup (document, context):
-	global doc, bibs, defaults, commands
-	doc = document
-	bibs = {}
-	defaults = []
-	commands = {}
-	doc.hook_macro('newcites', 'a', hook_newcites)
+class Module (rubber.module_interface.Module):
 
-def command (cmd, args):
-	names = None
+    def __init__ (self, document, context):
+        self.doc = document
+        self.bibs = {}
+        self.defaults = []
+        self.commands = {}
+        document.hook_macro ('newcites', 'a', self.hook_newcites)
 
-	# Check if there is the optional argument.
+    def command (self, cmd, args):
+        names = None
 
-	if len(args) > 0:
-		match = re_optarg.match(args[0])
-		if match:
-			names = match.group('list').split(',')
-			args = args[1:]
+        # Check if there is the optional argument.
 
-	# If not, this command will also be executed for newly created indices
-	# later on.
+        if len(args) > 0:
+            match = re_optarg.match(args[0])
+            if match:
+                names = match.group('list').split(',')
+                args = args[1:]
 
-	if names is None:
-		defaults.append([cmd, args])
-		names = bibs.keys()
+        # If not, this command will also be executed for newly created indices
+        # later on.
 
-	# Then run the command for each index it concerns.
+        if names is None:
+            self.defaults.append ([cmd, args])
+            names = self.bibs.keys()
 
-	for name in names:
-		if name in bibs:
-			bibs[name].command(cmd, args)
-		elif name in commands:
-			commands[name].append([cmd, args])
-		else:
-			commands[name] = [[cmd, args]]
+        # Then run the command for each index it concerns.
 
-def hook_newcites (loc, name):
-	bib = bibs[name] = Bibliography(doc, name)
-	doc.hook_macro('bibliography' + name, 'a',
-			bib.hook_bibliography)
-	doc.hook_macro('bibliographystyle' + name, 'a',
-			bib.hook_bibligraphystyle)
-	for cmd in defaults:
-		bib.command(*cmd)
-	if name in commands:
-		for cmd in commands[name]:
-			bib.command(*cmd)
-	msg.log(_("bibliography %s registered") % name, pkg='multibib')
+        for name in names:
+            if name in self.bibs:
+                self.bibs[name].bib_command (cmd, args)
+            elif name in self.commands:
+                self.commands [name].append ([cmd, args])
+            else:
+                self.commands [name] = [[cmd, args]]
 
-def pre_compile ():
-	for bib in bibs.values():
-		if not bib.pre_compile():
-			return False
-	return True
-
-def post_compile ():
-	for bib in bibs.values():
-		if not bib.post_compile():
-			return False
-	return True
-
-def clean ():
-	for bib in bibs.keys():
-		for suffix in '.aux', '.bbl', '.blg':
-			file = bib + suffix
-			if os.path.exists(file):
-				msg.log(_("removing %s") % file, pkg='multibib')
-				os.unlink(file)
+    def hook_newcites (self, loc, name):
+        self.doc.add_product (name + ".aux")
+        bib = self.bibs [name] = rubber.biblio.BibTeXDep (self.doc, name)
+        self.doc.hook_macro('bibliography' + name, 'a',
+                            bib.hook_bibliography)
+        self.doc.hook_macro('bibliographystyle' + name, 'a',
+                            bib.hook_bibliographystyle)
+        for cmd in self.defaults:
+            bib.bib_command (*cmd)
+        if name in self.commands:
+            for cmd in self.commands [name]:
+                bib.bib_command (*cmd)
+        msg.log(_("bibliography %s registered") % name, pkg='multibib')
