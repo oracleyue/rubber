@@ -5,3 +5,5 @@ src/version.py
 build
 build-stamp
 in
+doc/*.pdf
+doc/*.html

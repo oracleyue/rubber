@@ -100,8 +100,9 @@ class Modules:
 				if f != None:
 					f.close ()
 			if not (hasattr (source, "Module")
-				and issubclass (source.Module, rubber.module_interface.Module)):
-				msg.error (_("{}.Module must subclass rubber.module_interface.Module".format (name)))
+		                and issubclass (source.Module, rubber.module_interface.Module)):
+                                ## oracleyue: fix annoying error msg for nabib
+				# msg.error (_("{}.Module must subclass rubber.module_interface.Module".format (name)))
 				return 0
 
 			mod = source.Module (document=self.env, context=context)

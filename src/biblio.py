@@ -179,6 +179,8 @@ class BibTeXDep (BibToolDep):
 		if filename is not None:
 			self.bst_file = filename
 			self.add_source (filename, track_contents=True)
-		elif name not in [ "plain", "alpha" ]:
+		# elif name not in [ "plain", "alpha" ]:
+                # # oracleyue: fix bug of natbib styles
+		elif name not in [ "plain", "alpha", "apalike", "plainnat", "abbrvnat", "unsrtnat" ]:
 			# do not complain about default styles coming with bibtex
 			msg.warn (_ ("cannot find bibliography style %s") % name, pkg="biblio")
