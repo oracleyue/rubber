@@ -81,7 +81,12 @@ class BibToolDep (rubber.depend.Node):
 						filename = filename[:-4]
 
 					filename = self.find_bib (filename) or filename
-					line = int (m.group ("line"))
+
+                    # oracleyue: fix bug when no citation entry
+                    if m.group("line") is not None:
+				        line = int (m.group ("line"))
+                    else:
+                        line = int (0)
 
 					d =	{
 						"pkg": "bibtex",
@@ -180,7 +185,7 @@ class BibTeXDep (BibToolDep):
 			self.bst_file = filename
 			self.add_source (filename, track_contents=True)
 		# elif name not in [ "plain", "alpha" ]:
-                # # oracleyue: fix bug of natbib styles
+        # # oracleyue: fix bug of natbib styles
 		elif name not in [ "plain", "alpha", "apalike", "plainnat", "abbrvnat", "unsrtnat" ]:
 			# do not complain about default styles coming with bibtex
 			msg.warn (_ ("cannot find bibliography style %s") % name, pkg="biblio")
