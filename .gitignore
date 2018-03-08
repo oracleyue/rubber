@@ -7,3 +7,4 @@ build-stamp
 in
 doc/*.pdf
 doc/*.html
+.DS_Store
