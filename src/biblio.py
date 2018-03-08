@@ -20,8 +20,13 @@ class BibToolDep (rubber.depend.Node):
 		self.tool = "bibtex"
 		self.environ = os.environ.copy ()
 		self.bib_paths = rubber.util.explode_path ("BIBINPUTS")
-		self.bst_paths = rubber.util.explode_path ("BSTINPUTS")
+		# self.bst_paths = rubber.util.explode_path ("BSTINPUTS")
 		self.devnull = rubber.util.devnull ()
+		if any(os.access(os.path.join(path, "kpsepath"), os.X_OK) for path in os.environ["PATH"].split(os.pathsep)):
+			self.bst_paths = subprocess.check_output (["kpsepath", "bst"]).decode("utf-8").encode('ascii', 'ignore').split (":")
+		else:
+			self.bst_paths = rubber.util.explode_path ("BSTINPUTS")
+			msg.warn (_("cannot find cmd \"kpsepath\": you may set \"BSTINPUTS\" in your .bashrc"), pkg="biblio")
 
 	def bib_command (self, cmd, args):
 		getattr (self, "do_"+cmd) (*args)
